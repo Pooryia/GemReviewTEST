@@ -1,25 +1,69 @@
 /**
- * Grid Animation Application
+ * Grid Animation Application - Enhanced Edition
  * A responsive interactive grid with particle effects and animations
- * Enhanced with accessibility features and keyboard navigation
+ * Enhanced with accessibility features, keyboard navigation, and advanced optimizations
+ * 
+ * New Features:
+ * - Dynamic grid sizing (3x3 to 12x12)
+ * - Theme system with multiple color schemes
+ * - Pattern-based game modes
+ * - Save/restore functionality
+ * - Performance monitoring
  */
 
 class GridAnimationApp {
     constructor() {
-        // Configuration constants
+        // Enhanced configuration with dynamic settings
         this.config = {
             gridSize: 9,
+            minGridSize: 3,
+            maxGridSize: 12,
             particlesPerClick: 25,
             smokeParticlesPerClick: 8,
             glowEffectsPerClick: 3,
             sparkleParticlesPerClick: 15,
             rippleEffectsPerClick: 2,
-            maxParticles: 1000, // Limit for performance
+            maxParticles: 2000, // Increased limit
             animationDuration: 800,
-            debounceDelay: 16 // ~60fps
+            debounceDelay: 16, // ~60fps
+            autoSave: true
         };
 
-        // State management
+        // Theme system
+        this.themes = {
+            default: {
+                name: 'Purple Galaxy',
+                colors: {
+                    primary: '#8A2BE2',
+                    secondary: '#4B0082',
+                    accent: '#9370DB',
+                    background: '#1a0b2e',
+                    particle: '#DDA0DD'
+                }
+            },
+            ocean: {
+                name: 'Ocean Blue',
+                colors: {
+                    primary: '#0077be',
+                    secondary: '#006ba6',
+                    accent: '#00a8cc',
+                    background: '#0d1b2a',
+                    particle: '#7dd3fc'
+                }
+            }
+        };
+
+        this.currentTheme = 'default';
+
+        // Game modes
+        this.gameModes = {
+            freeplay: { name: 'Free Play', description: 'Click any cell to flip it' },
+            pattern: { name: 'Pattern Mode', description: 'Follow the pattern sequence' }
+        };
+
+        this.currentGameMode = 'freeplay';
+
+        // Enhanced state management
         this.state = {
             cells: [],
             canvasParticles: [],
@@ -30,10 +74,32 @@ class GridAnimationApp {
             currentFocusIndex: 0,
             flippedCount: 0,
             isMuted: false,
-            helpPanelOpen: false
+            helpPanelOpen: false,
+            settingsOpen: false,
+            gameStartTime: null,
+            bestTimes: {},
+            currentPattern: [],
+            patternStep: 0,
+            statistics: {
+                totalClicks: 0,
+                totalFlips: 0,
+                gamesPlayed: 0,
+                gamesCompleted: 0,
+                averageCompletionTime: 0
+            }
         };
 
-        // DOM element cache
+        // Performance monitoring
+        this.performance = {
+            frameCount: 0,
+            lastFpsCheck: performance.now(),
+            fps: 0,
+            particleCount: 0,
+            renderTime: 0,
+            memoryUsage: 0
+        };
+
+        // Enhanced DOM element cache
         this.elements = {
             gridContainer: null,
             canvas: null,
@@ -49,7 +115,17 @@ class GridAnimationApp {
             resetButton: null,
             muteButton: null,
             helpPanel: null,
-            closeHelpButton: null
+            closeHelpButton: null,
+            settingsButton: null,
+            settingsPanel: null,
+            themeSelector: null,
+            gridSizeSlider: null,
+            gameModeSelector: null,
+            statsDisplay: null,
+            performanceDisplay: null,
+            saveButton: null,
+            loadButton: null,
+            timerDisplay: null
         };
 
         // Performance optimizations
@@ -74,6 +150,17 @@ class GridAnimationApp {
         this.handleMuteToggle = this.handleMuteToggle.bind(this);
         this.handleGridFocus = this.handleGridFocus.bind(this);
         this.handleGridBlur = this.handleGridBlur.bind(this);
+        this.handleSettingsToggle = this.handleSettingsToggle.bind(this);
+        this.handleThemeChange = this.handleThemeChange.bind(this);
+        this.handleGridSizeChange = this.handleGridSizeChange.bind(this);
+        this.handleGameModeChange = this.handleGameModeChange.bind(this);
+        this.handleSave = this.handleSave.bind(this);
+        this.handleLoad = this.handleLoad.bind(this);
+        this.updatePerformanceMonitor = this.updatePerformanceMonitor.bind(this);
+        this.updateTimer = this.updateTimer.bind(this);
+        
+        // Load saved settings
+        this.loadSettings();
     }
 
     /**
@@ -117,10 +204,22 @@ class GridAnimationApp {
         this.elements.progressFill = document.querySelector('.progress-fill');
         this.elements.progressContainer = document.querySelector('.progress-container');
         this.elements.helpButton = document.getElementById('help-button');
+        this.elements.settingsButton = document.getElementById('settings-button');
         this.elements.resetButton = document.getElementById('reset-button');
+        this.elements.saveButton = document.getElementById('save-button');
+        this.elements.loadButton = document.getElementById('load-button');
         this.elements.muteButton = document.getElementById('mute-button');
         this.elements.helpPanel = document.getElementById('help-panel');
         this.elements.closeHelpButton = document.getElementById('close-help');
+        this.elements.settingsPanel = document.getElementById('settings-panel');
+        this.elements.closeSettingsButton = document.getElementById('close-settings');
+        this.elements.themeSelector = document.getElementById('theme-selector');
+        this.elements.gridSizeSlider = document.getElementById('grid-size-slider');
+        this.elements.gameModeSelector = document.getElementById('game-mode-selector');
+        this.elements.statsDisplay = document.getElementById('stats-display');
+        this.elements.performanceDisplay = document.getElementById('performance-display');
+        this.elements.timerDisplay = document.getElementById('timer-display');
+        this.elements.progressTotal = document.getElementById('progress-total');
 
         // Verify required elements exist
         const requiredElements = ['gridContainer', 'canvas', 'container'];
@@ -212,9 +311,24 @@ class GridAnimationApp {
             this.elements.helpButton.addEventListener('click', this.handleHelpToggle);
         }
 
+        // Settings button
+        if (this.elements.settingsButton) {
+            this.elements.settingsButton.addEventListener('click', this.handleSettingsToggle);
+        }
+
         // Reset button
         if (this.elements.resetButton) {
             this.elements.resetButton.addEventListener('click', this.handleReset);
+        }
+
+        // Save button
+        if (this.elements.saveButton) {
+            this.elements.saveButton.addEventListener('click', this.handleSave);
+        }
+
+        // Load button
+        if (this.elements.loadButton) {
+            this.elements.loadButton.addEventListener('click', this.handleLoad);
         }
 
         // Mute button
@@ -227,6 +341,31 @@ class GridAnimationApp {
             this.elements.closeHelpButton.addEventListener('click', this.handleHelpToggle);
         }
 
+        // Close settings button
+        if (this.elements.closeSettingsButton) {
+            this.elements.closeSettingsButton.addEventListener('click', this.handleSettingsToggle);
+        }
+
+        // Theme selector
+        if (this.elements.themeSelector) {
+            this.elements.themeSelector.addEventListener('change', this.handleThemeChange);
+        }
+
+        // Grid size slider
+        if (this.elements.gridSizeSlider) {
+            this.elements.gridSizeSlider.addEventListener('input', (e) => {
+                const value = e.target.value;
+                document.getElementById('grid-size-value').textContent = value;
+                document.getElementById('grid-size-value-2').textContent = value;
+            });
+            this.elements.gridSizeSlider.addEventListener('change', this.handleGridSizeChange);
+        }
+
+        // Game mode selector
+        if (this.elements.gameModeSelector) {
+            this.elements.gameModeSelector.addEventListener('change', this.handleGameModeChange);
+        }
+
         // Help panel escape key
         if (this.elements.helpPanel) {
             this.elements.helpPanel.addEventListener('keydown', (e) => {
@@ -235,6 +374,18 @@ class GridAnimationApp {
                 }
             });
         }
+
+        // Settings panel escape key
+        if (this.elements.settingsPanel) {
+            this.elements.settingsPanel.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    this.handleSettingsToggle();
+                }
+            });
+        }
+
+        // Update statistics display when settings open
+        this.updateStatisticsDisplay();
     }
 
     /**
@@ -513,6 +664,12 @@ class GridAnimationApp {
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
 
+            // Start timer on first click
+            this.startTimer();
+            
+            // Update statistics
+            this.state.statistics.totalClicks++;
+
             this.animateCell(cell, centerX, centerY, row, col);
             
             // Update keyboard navigation position when clicking
@@ -587,6 +744,7 @@ class GridAnimationApp {
             
             // Update state and progress
             this.state.flippedCount++;
+            this.state.statistics.totalFlips++;
             this.updateProgress();
             
             // Update accessibility
@@ -606,10 +764,15 @@ class GridAnimationApp {
      * Update progress indicator
      */
     updateProgress() {
-        const percentage = (this.state.flippedCount / (this.config.gridSize * this.config.gridSize)) * 100;
+        const totalCells = this.config.gridSize * this.config.gridSize;
+        const percentage = (this.state.flippedCount / totalCells) * 100;
         
         if (this.elements.progressCurrent) {
             this.elements.progressCurrent.textContent = this.state.flippedCount;
+        }
+        
+        if (this.elements.progressTotal) {
+            this.elements.progressTotal.textContent = totalCells;
         }
         
         if (this.elements.progressFill) {
@@ -618,10 +781,17 @@ class GridAnimationApp {
         
         if (this.elements.progressContainer) {
             this.elements.progressContainer.setAttribute('aria-valuenow', this.state.flippedCount);
+            this.elements.progressContainer.setAttribute('aria-valuemax', totalCells);
         }
         
         if (this.elements.gridContainer) {
             this.elements.gridContainer.setAttribute('data-flipped-cells', this.state.flippedCount);
+            this.elements.gridContainer.setAttribute('data-total-cells', totalCells);
+        }
+        
+        // Update statistics display if settings panel is open
+        if (this.state.settingsOpen) {
+            this.updateStatisticsDisplay();
         }
     }
 
@@ -731,6 +901,8 @@ class GridAnimationApp {
                 return;
             }
 
+            const startTime = performance.now();
+
             // Clear canvas
             this.elements.ctx.clearRect(0, 0, this.elements.canvas.width, this.elements.canvas.height);
 
@@ -747,6 +919,10 @@ class GridAnimationApp {
                 this.updateParticle(particle);
                 this.drawParticle(particle);
             }
+
+            // Update performance monitoring
+            this.performance.renderTime = performance.now() - startTime;
+            this.updatePerformanceMonitor();
 
             // Continue animation if particles exist
             if (this.state.canvasParticles.length > 0) {
@@ -997,6 +1173,9 @@ class GridAnimationApp {
         if (this.state.flippedCount === totalCells && !this.state.completionEffectActive) {
             this.state.completionEffectActive = true;
             
+            // Stop timer and update statistics
+            this.stopTimer();
+            
             // Announce completion
             this.announceToScreenReader('Congratulations! All cells are flipped. Completion animation starting.');
             
@@ -1153,6 +1332,331 @@ class GridAnimationApp {
             clearTimeout(timeout);
             timeout = setTimeout(later, wait);
         };
+    }
+
+    /**
+     * Load settings from localStorage
+     */
+    loadSettings() {
+        try {
+            const saved = localStorage.getItem('gridAnimationSettings');
+            if (saved) {
+                const settings = JSON.parse(saved);
+                this.config.gridSize = settings.gridSize || this.config.gridSize;
+                this.currentTheme = settings.theme || this.currentTheme;
+                this.currentGameMode = settings.gameMode || this.currentGameMode;
+                this.state.statistics = { ...this.state.statistics, ...settings.statistics };
+                this.state.bestTimes = settings.bestTimes || {};
+            }
+        } catch (error) {
+            console.warn('Could not load settings:', error);
+        }
+    }
+
+    /**
+     * Save settings to localStorage
+     */
+    saveSettings() {
+        try {
+            const settings = {
+                gridSize: this.config.gridSize,
+                theme: this.currentTheme,
+                gameMode: this.currentGameMode,
+                statistics: this.state.statistics,
+                bestTimes: this.state.bestTimes
+            };
+            localStorage.setItem('gridAnimationSettings', JSON.stringify(settings));
+        } catch (error) {
+            console.warn('Could not save settings:', error);
+        }
+    }
+
+    /**
+     * Apply theme to the application
+     * @param {string} themeName - Name of the theme to apply
+     */
+    applyTheme(themeName) {
+        const theme = this.themes[themeName];
+        if (!theme) return;
+
+        const root = document.documentElement;
+        root.style.setProperty('--particle-glow', theme.colors.primary);
+        root.style.setProperty('--gradient-1', theme.colors.background);
+        root.style.setProperty('--gradient-2', theme.colors.secondary);
+        root.style.setProperty('--gradient-3', theme.colors.primary);
+        root.style.setProperty('--gradient-4', theme.colors.accent);
+        root.style.setProperty('--gradient-5', theme.colors.particle);
+        
+        this.currentTheme = themeName;
+        this.saveSettings();
+    }
+
+    /**
+     * Update performance monitoring
+     */
+    updatePerformanceMonitor() {
+        const now = performance.now();
+        this.performance.frameCount++;
+        
+        if (now - this.performance.lastFpsCheck >= 1000) {
+            this.performance.fps = this.performance.frameCount;
+            this.performance.frameCount = 0;
+            this.performance.lastFpsCheck = now;
+            this.performance.particleCount = this.state.canvasParticles.length + this.state.domParticles.size;
+            
+            if (this.elements.performanceDisplay) {
+                this.elements.performanceDisplay.textContent = 
+                    `FPS: ${this.performance.fps} | Particles: ${this.performance.particleCount}`;
+            }
+        }
+    }
+
+    /**
+     * Update timer display
+     */
+    updateTimer() {
+        if (this.state.gameStartTime && this.elements.timerDisplay) {
+            const elapsed = Math.floor((Date.now() - this.state.gameStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            this.elements.timerDisplay.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        }
+    }
+
+    /**
+     * Handle settings toggle
+     */
+    handleSettingsToggle() {
+        this.state.settingsOpen = !this.state.settingsOpen;
+        
+        if (this.elements.settingsPanel) {
+            this.elements.settingsPanel.classList.toggle('active', this.state.settingsOpen);
+            this.elements.settingsPanel.setAttribute('aria-hidden', !this.state.settingsOpen);
+        }
+    }
+
+    /**
+     * Handle theme change
+     * @param {Event} event - The change event
+     */
+    handleThemeChange(event) {
+        this.applyTheme(event.target.value);
+    }
+
+    /**
+     * Handle grid size change
+     * @param {Event} event - The change event
+     */
+    handleGridSizeChange(event) {
+        const newSize = parseInt(event.target.value, 10);
+        if (newSize >= this.config.minGridSize && newSize <= this.config.maxGridSize) {
+            this.config.gridSize = newSize;
+            
+            // Clear existing grid
+            if (this.elements.gridContainer) {
+                this.elements.gridContainer.innerHTML = '';
+                this.elements.gridContainer.setAttribute('data-grid-size', newSize);
+            }
+            
+            this.handleReset();
+            this.initializeGrid();
+            this.updateProgress();
+            this.saveSettings();
+            
+            this.announceToScreenReader(`Grid size changed to ${newSize}x${newSize}`);
+        }
+    }
+
+    /**
+     * Handle game mode change
+     * @param {Event} event - The change event
+     */
+    handleGameModeChange(event) {
+        this.currentGameMode = event.target.value;
+        this.saveSettings();
+        this.announceToScreenReader(`Game mode changed to ${this.gameModes[this.currentGameMode].name}`);
+    }
+
+    /**
+     * Handle save state
+     */
+    handleSave() {
+        try {
+            const gameState = {
+                cells: this.state.cells.map(cell => ({ 
+                    id: cell.id,
+                    flipped: cell.classList.contains('flipped')
+                })),
+                flippedCount: this.state.flippedCount,
+                gridSize: this.config.gridSize,
+                theme: this.currentTheme,
+                gameMode: this.currentGameMode,
+                timestamp: Date.now()
+            };
+            
+            localStorage.setItem('gridAnimationSave', JSON.stringify(gameState));
+            this.announceToScreenReader('Game state saved successfully');
+        } catch (error) {
+            console.error('Save failed:', error);
+            this.announceToScreenReader('Save failed', true);
+        }
+    }
+
+    /**
+     * Handle load state
+     */
+    handleLoad() {
+        try {
+            const saved = localStorage.getItem('gridAnimationSave');
+            if (!saved) {
+                this.announceToScreenReader('No saved game found', true);
+                return;
+            }
+            
+            const gameState = JSON.parse(saved);
+            
+            // Restore configuration
+            this.config.gridSize = gameState.gridSize;
+            this.currentTheme = gameState.theme;
+            this.currentGameMode = gameState.gameMode;
+            
+            // Apply theme
+            this.applyTheme(this.currentTheme);
+            
+            // Rebuild grid
+            this.handleReset();
+            this.initializeGrid();
+            
+            // Restore cell states
+            setTimeout(() => {
+                gameState.cells.forEach(cellState => {
+                    const cell = document.getElementById(cellState.id);
+                    if (cell && cellState.flipped) {
+                        cell.classList.add('flipped');
+                    }
+                });
+                
+                this.state.flippedCount = gameState.flippedCount;
+                this.updateProgress();
+            }, 100);
+            
+            this.announceToScreenReader('Game state loaded successfully');
+        } catch (error) {
+            console.error('Load failed:', error);
+            this.announceToScreenReader('Load failed', true);
+        }
+    }
+
+    /**
+     * Start game timer
+     */
+    startTimer() {
+        if (!this.state.gameStartTime) {
+            this.state.gameStartTime = Date.now();
+            this.state.statistics.gamesPlayed++;
+            this.timerInterval = setInterval(this.updateTimer, 1000);
+        }
+    }
+
+    /**
+     * Stop game timer
+     */
+    stopTimer() {
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+        }
+        
+        if (this.state.gameStartTime) {
+            const completionTime = Date.now() - this.state.gameStartTime;
+            const gridKey = `${this.config.gridSize}x${this.config.gridSize}`;
+            
+            if (!this.state.bestTimes[gridKey] || completionTime < this.state.bestTimes[gridKey]) {
+                this.state.bestTimes[gridKey] = completionTime;
+                this.announceToScreenReader(`New best time for ${gridKey}: ${Math.floor(completionTime / 1000)} seconds!`);
+            }
+            
+            this.state.statistics.gamesCompleted++;
+            this.state.statistics.averageCompletionTime = 
+                (this.state.statistics.averageCompletionTime * (this.state.statistics.gamesCompleted - 1) + completionTime) / 
+                this.state.statistics.gamesCompleted;
+            
+            this.saveSettings();
+        }
+    }
+
+    /**
+     * Generate pattern for pattern mode
+     */
+    generatePattern() {
+        const patternLength = Math.min(this.config.gridSize, 5);
+        this.state.currentPattern = [];
+        
+        for (let i = 0; i < patternLength; i++) {
+            const row = Math.floor(Math.random() * this.config.gridSize);
+            const col = Math.floor(Math.random() * this.config.gridSize);
+            this.state.currentPattern.push({ row, col });
+        }
+        
+        this.state.patternStep = 0;
+        this.showPattern();
+    }
+
+    /**
+     * Show pattern sequence
+     */
+    showPattern() {
+        this.state.currentPattern.forEach((step, index) => {
+            setTimeout(() => {
+                const cellIndex = step.row * this.config.gridSize + step.col;
+                const cell = this.state.cells[cellIndex];
+                if (cell) {
+                    cell.classList.add('pattern-highlight');
+                    setTimeout(() => {
+                        cell.classList.remove('pattern-highlight');
+                    }, 500);
+                }
+            }, index * 600);
+        });
+    }
+
+    /**
+     * Update statistics display in settings panel
+     */
+    updateStatisticsDisplay() {
+        const stats = this.state.statistics;
+        
+        // Update individual stats
+        const statElements = {
+            'stat-games-played': stats.gamesPlayed,
+            'stat-games-completed': stats.gamesCompleted,
+            'stat-total-clicks': stats.totalClicks,
+            'stat-total-flips': stats.totalFlips
+        };
+        
+        Object.entries(statElements).forEach(([id, value]) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = value;
+            }
+        });
+        
+        // Update best times
+        const bestTimesList = document.getElementById('best-times-list');
+        if (bestTimesList) {
+            if (Object.keys(this.state.bestTimes).length === 0) {
+                bestTimesList.textContent = 'No times recorded yet';
+            } else {
+                bestTimesList.innerHTML = Object.entries(this.state.bestTimes)
+                    .map(([gridSize, time]) => {
+                        const seconds = Math.floor(time / 1000);
+                        const minutes = Math.floor(seconds / 60);
+                        const remainingSeconds = seconds % 60;
+                        return `<div>${gridSize}: ${minutes}:${remainingSeconds.toString().padStart(2, '0')}</div>`;
+                    })
+                    .join('');
+            }
+        }
     }
 }
 
